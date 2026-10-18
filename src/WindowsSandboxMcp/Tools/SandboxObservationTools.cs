@@ -17,14 +17,14 @@ public sealed class SandboxObservationTools
         if (maxResults is < 1 or > 500)
             return "Error: maxResults must be between 1 and 500.";
 
+        var safeFilter = (processName ?? string.Empty).Replace("'", "''");
         var filter = string.IsNullOrWhiteSpace(processName)
             ? string.Empty
-            : $"Where-Object {{ $_.ProcessName -like '{processName.Replace("'", "''")}' }} |";
+            : $"Where-Object {{ $_.ProcessName -like '{safeFilter}' }} |\n                ";
 
-        var script = $"""
+        var script = $$"""
             Get-Process |
-                {filter}
-                Sort-Object CPU -Descending |
+                {filter}Sort-Object CPU -Descending |
                 Select-Object -First {maxResults} Id, ProcessName, CPU, WorkingSet64, Path |
                 ConvertTo-Json -Depth 3
             """;
@@ -41,14 +41,14 @@ public sealed class SandboxObservationTools
         if (maxResults is < 1 or > 500)
             return "Error: maxResults must be between 1 and 500.";
 
+        var safeFilter = (serviceName ?? string.Empty).Replace("'", "''");
         var filter = string.IsNullOrWhiteSpace(serviceName)
             ? string.Empty
-            : $"Where-Object {{ $_.Name -like '{serviceName.Replace("'", "''")}' -or $_.DisplayName -like '{serviceName.Replace("'", "''")}' }} |";
+            : $"Where-Object {{ $_.Name -like '{safeFilter}' -or $_.DisplayName -like '{safeFilter}' }} |\n                ";
 
-        var script = $"""
+        var script = $$"""
             Get-Service |
-                {filter}
-                Select-Object -First {maxResults} Name, DisplayName, Status, StartType |
+                {filter}Select-Object -First {maxResults} Name, DisplayName, Status, StartType |
                 ConvertTo-Json -Depth 3
             """;
 
@@ -64,14 +64,14 @@ public sealed class SandboxObservationTools
         if (maxResults is < 1 or > 500)
             return "Error: maxResults must be between 1 and 500.";
 
+        var safeFilter = (taskName ?? string.Empty).Replace("'", "''");
         var filter = string.IsNullOrWhiteSpace(taskName)
             ? string.Empty
-            : $"Where-Object {{ $_.TaskName -like '{taskName.Replace("'", "''")}' }} |";
+            : $"Where-Object {{ $_.TaskName -like '{safeFilter}' }} |\n                ";
 
-        var script = $"""
+        var script = $$"""
             Get-ScheduledTask |
-                {filter}
-                Select-Object -First {maxResults} TaskName, TaskPath, State |
+                {filter}Select-Object -First {maxResults} TaskName, TaskPath, State |
                 ConvertTo-Json -Depth 3
             """;
 
@@ -86,7 +86,7 @@ public sealed class SandboxObservationTools
         if (maxResults is < 1 or > 500)
             return "Error: maxResults must be between 1 and 500.";
 
-        var script = $"""
+        var script = $$"""
             Get-NetTCPConnection |
                 Select-Object -First {maxResults} LocalAddress, LocalPort, RemoteAddress, RemotePort, State, OwningProcess |
                 ConvertTo-Json -Depth 3
@@ -106,7 +106,7 @@ public sealed class SandboxObservationTools
 
         var safeLogName = logName.Replace("'", "''");
 
-        var script = $"""
+        var script = $$"""
             Get-WinEvent -LogName '{safeLogName}' -MaxEvents {maxEvents} |
                 Select-Object TimeCreated, ProviderName, LevelDisplayName, Id, Message |
                 ConvertTo-Json -Depth 3
@@ -143,7 +143,7 @@ public sealed class SandboxObservationTools
         var fileName = $"sandbox-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..8]}.png";
         var hostPath = Path.Combine(LabPolicy.HostResultsRoot, fileName);
 
-        var script = $"""
+        var script = $$"""
             Add-Type -AssemblyName System.Windows.Forms
             Add-Type -AssemblyName System.Drawing
 
@@ -160,13 +160,12 @@ public sealed class SandboxObservationTools
 
         var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
 
-        return result.ExitCode == 0
-            ? System.Text.Json.JsonSerializer.Serialize(new
-            {
-                hostFilePath = hostPath,
-                output = result.Output,
-                error = result.Error
-            }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })
-            : System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            hostFilePath = hostPath,
+            output = result.Output,
+            exitCode = result.ExitCode,
+            error = result.Error
+        }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
     }
 }

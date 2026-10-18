@@ -32,20 +32,22 @@ public sealed class SandboxGuiTools
 
         var safeTitle = windowTitle.Replace("'", "''");
 
-        var script = $"""
+        var script = $$"""
             $deadline = (Get-Date).AddSeconds({timeoutSeconds})
-            while ((Get-Date) -lt $deadline) {{
+            while ((Get-Date) -lt $deadline)
+            {
                 $window = Get-Process |
-                    Where-Object {{ $_.MainWindowTitle -like '{safeTitle}' }} |
+                    Where-Object { $_.MainWindowTitle -like '{safeTitle}' } |
                     Select-Object -First 1
 
-                if ($window) {{
+                if ($window)
+                {
                     $window | Select-Object Id, ProcessName, MainWindowTitle | ConvertTo-Json -Depth 3
                     exit 0
-                }}
+                }
 
                 Start-Sleep -Milliseconds 500
-            }}
+            }
 
             Write-Error 'Timed out waiting for window.'
             exit 1
@@ -64,7 +66,7 @@ public sealed class SandboxGuiTools
 
         var safeKeys = keys.Replace("'", "''");
 
-        var script = $"""
+        var script = $$"""
             Add-Type -AssemblyName System.Windows.Forms
             [System.Windows.Forms.SendKeys]::SendWait('{safeKeys}')
             Write-Output 'Keys sent.'
@@ -83,31 +85,10 @@ public sealed class SandboxGuiTools
 
         var safeText = text.Replace("'", "''");
 
-        var script = $"""
+        var script = $$"""
             Add-Type -AssemblyName System.Windows.Forms
             [System.Windows.Forms.SendKeys]::SendWait('{safeText}')
             Write-Output 'Text sent.'
-            """;
-
-        return await GuestRunner.RunAsync(script, 30, null).ConfigureAwait(false);
-    }
-
-    [McpServerTool]
-    [Description("Clicks the centre of the currently focused Sandbox window. Verify the focused window with list_windows first.")]
-    public async Task<string> ClickFocusedWindowCenter()
-    {
-        var script = """
-            Add-Type -AssemblyName System.Windows.Forms
-            $window = Get-Process |
-                Where-Object { $_.MainWindowHandle -ne 0 } |
-                Select-Object -First 1
-
-            if (-not $window) {
-                Write-Error 'No focused window found.'
-                exit 1
-            }
-
-            Write-Output "Focused window: $($window.MainWindowTitle)"
             """;
 
         return await GuestRunner.RunAsync(script, 30, null).ConfigureAwait(false);
@@ -120,15 +101,16 @@ public sealed class SandboxGuiTools
     {
         var safeTitle = windowTitle.Replace("'", "''");
 
-        var script = $"""
+        var script = $$"""
             $window = Get-Process |
-                Where-Object {{ $_.MainWindowTitle -like '{safeTitle}' }} |
+                Where-Object { $_.MainWindowTitle -like '{safeTitle}' } |
                 Select-Object -First 1
 
-            if (-not $window) {{
+            if (-not $window)
+            {
                 Write-Error 'Window not found.'
                 exit 1
-            }}
+            }
 
             $window | Select-Object Id, ProcessName, MainWindowTitle, MainWindowHandle |
                 ConvertTo-Json -Depth 3

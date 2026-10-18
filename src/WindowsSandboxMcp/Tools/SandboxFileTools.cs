@@ -18,19 +18,21 @@ public sealed class SandboxFileTools
         [Description("Overwrite an existing file.")] bool overwrite = true)
     {
         var guestFilePath = GuestPath.ValidateWorkspaceFile(guestPath);
-        var encodedContent = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(content));
+        var encodedContent = Convert.ToBase64String(Encoding.UTF8.GetBytes(content));
 
-        var script = $"""
+        var script = $$"""
             $path = '{guestFilePath}'
             $directory = Split-Path -Path $path -Parent
-            if (-not (Test-Path -LiteralPath $directory)) {{
+            if (-not (Test-Path -LiteralPath $directory))
+            {
                 New-Item -ItemType Directory -Path $directory -Force | Out-Null
-            }}
+            }
 
-            if ((Test-Path -LiteralPath $path) -and -not $overwrite) {{
+            if ((Test-Path -LiteralPath $path) -and -not $overwrite)
+            {
                 Write-Error 'File already exists.'
                 exit 1
-            }}
+            }
 
             $bytes = [System.Convert]::FromBase64String('{encodedContent}')
             [System.IO.File]::WriteAllBytes($path, $bytes)
@@ -51,21 +53,24 @@ public sealed class SandboxFileTools
         if (maxCharacters is < 1 or > LabPolicy.MaxOutputBytes)
             return "Error: maxCharacters must be between 1 and 262144.";
 
-        var script = $"""
+        var script = $$"""
             $path = '{guestFilePath}'
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {{
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf))
+            {
                 Write-Error 'File not found.'
                 exit 1
-            }}
+            }
 
             $text = Get-Content -LiteralPath $path -Raw
-            if ($text.Length -gt {maxCharacters}) {{
+            if ($text.Length -gt {maxCharacters})
+            {
                 $text.Substring(0, {maxCharacters})
                 Write-Error 'Output truncated because the file exceeded maxCharacters.'
-            }}
-            else {{
+            }
+            else
+            {
                 $text
-            }}
+            }
             """;
 
         return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
@@ -82,12 +87,13 @@ public sealed class SandboxFileTools
         if (maxEntries is < 1 or > 1000)
             return "Error: maxEntries must be between 1 and 1000.";
 
-        var script = $"""
+        var script = $$"""
             $path = '{guestDirectory}'
-            if (-not (Test-Path -LiteralPath $path -PathType Container)) {{
+            if (-not (Test-Path -LiteralPath $path -PathType Container))
+            {
                 Write-Error 'Directory not found.'
                 exit 1
-            }}
+            }
 
             Get-ChildItem -LiteralPath $path -Force |
                 Select-Object -First {maxEntries} Name, Length, LastWriteTime, Mode |
@@ -100,7 +106,7 @@ public sealed class SandboxFileTools
     [McpServerTool]
     [Description("Uploads a file from the host staging folder into the Sandbox workspace at C:\\Lab.")]
     public async Task<string> UploadFile(
-        [Description("Host file path under C:\\AI\\lab-staging.")] string hostFilePath,
+        [Description("Host file path under C:\\Windows-sandbox-MCP\\staging.")] string hostFilePath,
         [Description("Destination guest path under C:\\Lab.")] string guestPath)
     {
         var sourcePath = PathValidator.RequireUnder(LabPolicy.HostStagingRoot, hostFilePath);
@@ -113,12 +119,13 @@ public sealed class SandboxFileTools
         if (fileInfo.Length > LabPolicy.MaxFileBytes)
             return $"Error: file exceeds the {LabPolicy.MaxFileBytes} byte limit.";
 
-        var script = $"""
+        var script = $$"""
             $destination = '{destinationPath}'
             $directory = Split-Path -Path $destination -Parent
-            if (-not (Test-Path -LiteralPath $directory)) {{
+            if (-not (Test-Path -LiteralPath $directory))
+            {
                 New-Item -ItemType Directory -Path $directory -Force | Out-Null
-            }}
+            }
 
             Copy-Item -LiteralPath 'C:\LabStaging\{fileInfo.Name}' -Destination $destination -Force
             Write-Output "Uploaded $(Split-Path -Path $destination -Leaf)"
@@ -159,7 +166,7 @@ public sealed class SandboxFileTools
 
         Directory.CreateDirectory(LabPolicy.HostResultsRoot);
 
-        var script = $"""
+        var script = $$"""
             Copy-Item -LiteralPath '{guestFilePath}' -Destination 'C:\LabResults\{hostFileName}' -Force
             Write-Output "Downloaded {hostFileName}"
             """;
@@ -185,19 +192,20 @@ public sealed class SandboxFileTools
     }
 
     [McpServerTool]
-    [Description("Deletes a file or empty directory inside the Sandbox workspace at C:\\Lab.")]
+    [Description("Deletes a file or directory inside the Sandbox workspace at C:\\Lab.")]
     public async Task<string> DeleteFile(
         [Description("Guest path under C:\\Lab.")] string guestPath,
         [Description("Allow deletion of a non-empty directory.")] bool recursive = false)
     {
         var guestFilePath = GuestPath.ValidateWorkspaceFile(guestPath);
 
-        var script = $"""
+        var script = $$"""
             $path = '{guestFilePath}'
-            if (-not (Test-Path -LiteralPath $path)) {{
+            if (-not (Test-Path -LiteralPath $path))
+            {
                 Write-Error 'Path not found.'
                 exit 1
-            }}
+            }
 
             Remove-Item -LiteralPath $path -Recurse:$recursive -Force
             Write-Output "Deleted $path"

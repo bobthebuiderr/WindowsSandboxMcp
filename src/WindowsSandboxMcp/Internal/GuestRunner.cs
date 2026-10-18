@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using WindowsSandboxMcp.Models;
 using WindowsSandboxMcp.Security;
 
@@ -24,10 +23,7 @@ internal static class GuestRunner
             return Failure(jobId, startedAt, "Command cannot be empty.");
 
         if (timeoutSeconds < LabPolicy.MinTimeoutSeconds || timeoutSeconds > LabPolicy.MaxTimeoutSeconds)
-            return Failure(
-                jobId,
-                startedAt,
-                $"Timeout must be between {LabPolicy.MinTimeoutSeconds} and {LabPolicy.MaxTimeoutSeconds} seconds.");
+            return Failure(jobId, startedAt, $"Timeout must be between {LabPolicy.MinTimeoutSeconds} and {LabPolicy.MaxTimeoutSeconds} seconds.");
 
         if (!WindowsSandbox.CanUseSandboxCli())
             return Failure(jobId, startedAt, "Windows Sandbox CLI is not available on this system.");
@@ -36,10 +32,7 @@ internal static class GuestRunner
         if (string.IsNullOrEmpty(sandboxId))
             return Failure(jobId, startedAt, "No running Sandbox found. Start a Sandbox first.");
 
-        var hostJobDirectory = Path.Combine(
-            LabPolicy.HostJobsRoot,
-            jobId);
-
+        var hostJobDirectory = Path.Combine(LabPolicy.HostJobsRoot, jobId);
         var guestJobDirectory = $"{GuestJobRoot}\\{jobId}";
 
         Directory.CreateDirectory(hostJobDirectory);
@@ -63,7 +56,7 @@ internal static class GuestRunner
 
             var encodedCommand = Convert.ToBase64String(Encoding.UTF8.GetBytes(command));
 
-            var guestScript = $"""
+            var guestScript = $$"""
                 $ErrorActionPreference = 'Continue'
                 $outputPath = '{guestOutputPath}'
                 $errorPath = '{guestErrorPath}'
@@ -74,56 +67,54 @@ internal static class GuestRunner
                 $stderrFile = [System.IO.File]::CreateText($errorPath)
 
                 try
-                {{
+                {
                     $commandText = [System.Text.Encoding]::UTF8.GetString(
                         [System.Convert]::FromBase64String('{encodedCommand}'))
 
                     $output = Invoke-Expression $commandText 2>&1
 
                     foreach ($item in $output)
-                    {{
+                    {
                         if ($item -is [System.Management.Automation.ErrorRecord])
-                        {{
+                        {
                             $stderrFile.WriteLine($item.ToString())
-                        }}
+                        }
                         else
-                        {{
+                        {
                             $stdoutFile.WriteLine($item.ToString())
-                        }}
-                    }}
+                        }
+                    }
 
                     $exitCode = 0
                     if ($null -ne $LASTEXITCODE)
-                    {{
+                    {
                         $exitCode = $LASTEXITCODE
-                    }}
+                    }
                     elseif (-not $?)
-                    {{
+                    {
                         $exitCode = 1
-                    }}
+                    }
 
                     $exitCode | Set-Content -LiteralPath $exitPath -Encoding ASCII
-                }}
+                }
                 catch
-                {{
+                {
                     $stderrFile.WriteLine($_.ToString())
                     1 | Set-Content -LiteralPath $exitPath -Encoding ASCII
-                }}
+                }
                 finally
-                {{
+                {
                     $stdoutFile.Flush()
                     $stdoutFile.Dispose()
                     $stderrFile.Flush()
                     $stderrFile.Dispose()
 
                     'completed' | Set-Content -LiteralPath $donePath -Encoding ASCII
-                }}
+                }
                 """;
 
             var encodedRunner = Convert.ToBase64String(Encoding.UTF8.GetBytes(guestScript));
-
-            var runnerCommand =
-                $"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encodedRunner}";
+            var runnerCommand = $"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encodedRunner}";
 
             var executionTask = WindowsSandbox.ExecuteInSandboxAsync(
                 sandboxId,
@@ -154,9 +145,7 @@ internal static class GuestRunner
             var hostDonePath = Path.Combine(hostJobDirectory, "done.txt");
 
             if (!timedOut)
-            {
                 await WaitForFileAsync(hostDonePath, TimeSpan.FromSeconds(15), cancellationToken).ConfigureAwait(false);
-            }
 
             var stdout = await ReadExistingFileAsync(hostOutputPath, cancellationToken).ConfigureAwait(false);
             var stderr = await ReadExistingFileAsync(hostErrorPath, cancellationToken).ConfigureAwait(false);
@@ -165,9 +154,7 @@ internal static class GuestRunner
             {
                 var exitText = (await ReadExistingFileAsync(hostExitPath, cancellationToken).ConfigureAwait(false)).Trim();
                 if (int.TryParse(exitText, out var parsedExitCode))
-                {
                     exitCode = parsedExitCode;
-                }
             }
 
             var combined = stdout;
@@ -185,13 +172,9 @@ internal static class GuestRunner
                 truncated = true;
             }
 
-            var outputBytes = File.Exists(hostOutputPath)
-                ? new FileInfo(hostOutputPath).Length
-                : 0;
-
+            var outputBytes = File.Exists(hostOutputPath) ? new FileInfo(hostOutputPath).Length : 0;
             var outputHash = File.Exists(hostOutputPath)
-                ? Convert.ToHexString(SHA256.HashData(
-                    await File.ReadAllBytesAsync(hostOutputPath, cancellationToken).ConfigureAwait(false)))
+                ? Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(hostOutputPath, cancellationToken).ConfigureAwait(false)))
                 : string.Empty;
 
             var duration = (DateTimeOffset.UtcNow - startedAt).TotalSeconds;
@@ -229,19 +212,12 @@ internal static class GuestRunner
     {
         var jobId = Guid.NewGuid().ToString("N");
         var result = await RunAsync(command, timeoutSeconds, workingDirectory, jobId, cancellationToken).ConfigureAwait(false);
-
-        var hostArtifactPath = Path.Combine(
-            LabPolicy.HostJobsRoot,
-            jobId,
-            artifactFileName);
+        var hostArtifactPath = Path.Combine(LabPolicy.HostJobsRoot, jobId, artifactFileName);
 
         return (result, File.Exists(hostArtifactPath) ? hostArtifactPath : null);
     }
 
-    private static CommandExecutionResult Failure(
-        string jobId,
-        DateTimeOffset startedAt,
-        string error)
+    private static CommandExecutionResult Failure(string jobId, DateTimeOffset startedAt, string error)
     {
         return new CommandExecutionResult(
             JobId: jobId,
@@ -256,22 +232,14 @@ internal static class GuestRunner
             Error: error);
     }
 
-    private static async Task WaitForFileAsync(
-        string path,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
+    private static async Task WaitForFileAsync(string path, TimeSpan timeout, CancellationToken cancellationToken)
     {
         var deadline = DateTimeOffset.UtcNow + timeout;
-
         while (!File.Exists(path) && DateTimeOffset.UtcNow < deadline)
-        {
             await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
-        }
     }
 
-    private static async Task<string> ReadExistingFileAsync(
-        string path,
-        CancellationToken cancellationToken)
+    private static async Task<string> ReadExistingFileAsync(string path, CancellationToken cancellationToken)
     {
         if (!File.Exists(path))
             return string.Empty;
