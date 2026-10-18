@@ -10,7 +10,6 @@ if (!OperatingSystem.IsWindows())
     return 1;
 }
 
-// Start MCP stdio Server
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
@@ -31,10 +30,10 @@ try
                     ?? "0.0.1";
             }
 
-            o.ServerInstructions = Prompts.McpServerPrompt;            
+            o.ServerInstructions = Prompts.McpServerPrompt;
         })
         .WithStdioServerTransport()
-        .WithTools(new WindowsSandboxTools());
+        .WithToolsFromAssembly();
 
     using var app = builder.Build();
     app.Run();
