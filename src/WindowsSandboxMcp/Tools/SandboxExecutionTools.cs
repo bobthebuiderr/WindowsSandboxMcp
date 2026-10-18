@@ -1,6 +1,8 @@
 using System.ComponentModel;
-using System.Text;
+using System.Text.Json;
 using ModelContextProtocol.Server;
+using WindowsSandboxMcp.Internal;
+using WindowsSandboxMcp.Models;
 using WindowsSandboxMcp.Security;
 
 namespace WindowsSandboxMcp.Tools;
@@ -8,221 +10,114 @@ namespace WindowsSandboxMcp.Tools;
 [McpServerToolType]
 public sealed class SandboxExecutionTools
 {
-    private const string GuestJobRoot = @"C:\WindowsSandboxMcpJobs";
-
     [McpServerTool]
-    [Description("Runs a PowerShell command inside the running Windows Sandbox and returns its output directly, like a normal shell tool. Returns JSON containing output, exit code, duration and truncation status. The Sandbox must already be running.")]
+    [Description("Runs a PowerShell command in the running Windows Sandbox and returns its output, exit code, duration and truncation status directly.")]
     public async Task<string> RunCommand(
         [Description("PowerShell command or script to execute inside the Sandbox.")] string command,
         [Description("Timeout in seconds, between 1 and 300.")] int timeoutSeconds = 120,
         [Description("Optional working directory inside the Sandbox.")] string? workingDirectory = null)
     {
-        var jobId = Guid.NewGuid().ToString("N");
-        var startedAt = DateTimeOffset.UtcNow;
+        var result = await GuestRunner.RunAsync(
+            command,
+            timeoutSeconds,
+            workingDirectory).ConfigureAwait(false);
 
-        try
+        return Serialize(result);
+    }
+
+    [McpServerTool]
+    [Description("Starts a PowerShell command in the running Windows Sandbox as a background job and returns a job ID. Use get_job or wait_job to retrieve its result.")]
+    public async Task<string> RunCommandAsync(
+        [Description("PowerShell command or script to execute inside the Sandbox.")] string command,
+        [Description("Timeout in seconds, between 1 and 300.")] int timeoutSeconds = 300,
+        [Description("Optional working directory inside the Sandbox.")] string? workingDirectory = null)
+    {
+        var job = JobManager.Create(command, timeoutSeconds, workingDirectory);
+
+        return Serialize(new
         {
-            if (string.IsNullOrWhiteSpace(command))
-                return Error(jobId, "Command cannot be empty.");
+            job.JobId,
+            job.Command,
+            job.State,
+            job.StartedAt,
+            timeoutSeconds
+        });
+    }
 
-            if (timeoutSeconds < LabPolicy.MinTimeoutSeconds || timeoutSeconds > LabPolicy.MaxTimeoutSeconds)
-                return Error(jobId, $"timeoutSeconds must be between {LabPolicy.MinTimeoutSeconds} and {LabPolicy.MaxTimeoutSeconds}.");
+    [McpServerTool]
+    [Description("Gets the current state and result of a Sandbox command job.")]
+    public async Task<string> GetJob(
+        [Description("Job ID returned by run_command_async.")] string jobId)
+    {
+        var job = JobManager.Get(jobId);
+        if (job is null)
+            return Error(jobId, "Job not found.");
 
-            if (!WindowsSandbox.CanUseSandboxCli())
-                return Error(jobId, "Windows Sandbox CLI is not available on this system.");
-
-            var sandboxId = await WindowsSandbox.GetSingleSandboxIdAsync().ConfigureAwait(false);
-            if (string.IsNullOrEmpty(sandboxId))
-                return Error(jobId, "No running Sandbox found. Start a Sandbox first.");
-
-            var hostJobDirectory = Path.Combine(
-                Path.GetTempPath(),
-                "WindowsSandboxMcp",
-                "runs",
-                jobId);
-
-            var guestJobDirectory = $"{GuestJobRoot}\\{jobId}";
-
-            Directory.CreateDirectory(hostJobDirectory);
-
-            var shareError = await WindowsSandbox.AddSharedFolderAsync(
-                sandboxId,
-                hostJobDirectory,
-                guestJobDirectory,
-                true).ConfigureAwait(false);
-
-            if (!string.IsNullOrEmpty(shareError))
-                return Error(jobId, $"Failed to create the private job channel: {shareError}");
-
-            var guestOutputPath = $"{guestJobDirectory}\\output.txt";
-            var guestExitPath = $"{guestJobDirectory}\\exit.txt";
-            var guestDonePath = $"{guestJobDirectory}\\done.txt";
-
-            var encodedCommand = Convert.ToBase64String(Encoding.UTF8.GetBytes(command));
-
-            var guestScript = $"""
-                $ErrorActionPreference = 'Continue'
-                $outputPath = '{guestOutputPath}'
-                $exitPath = '{guestExitPath}'
-                $donePath = '{guestDonePath}'
-
-                try
-                {{
-                    $command = [System.Text.Encoding]::UTF8.GetString(
-                        [System.Convert]::FromBase64String('{encodedCommand}'))
-
-                    $result = Invoke-Expression $command 2>&1
-                    $result | Out-String -Width 4096 |
-                        Set-Content -LiteralPath $outputPath -Encoding UTF8
-
-                    $exitCode = 0
-                    if ($null -ne $LASTEXITCODE)
-                    {{
-                        $exitCode = $LASTEXITCODE
-                    }}
-                    elseif (-not $?)
-                    {{
-                        $exitCode = 1
-                    }}
-
-                    $exitCode | Set-Content -LiteralPath $exitPath -Encoding ASCII
-                }}
-                catch
-                {{
-                    $_ | Out-String |
-                        Set-Content -LiteralPath $outputPath -Encoding UTF8
-                    1 | Set-Content -LiteralPath $exitPath -Encoding ASCII
-                }}
-
-                'completed' | Set-Content -LiteralPath $donePath -Encoding ASCII
-                """;
-
-            var encodedRunner = Convert.ToBase64String(Encoding.UTF8.GetBytes(guestScript));
-
-            var runnerCommand =
-                $"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encodedRunner}";
-
-            var executionTask = WindowsSandbox.ExecuteInSandboxAsync(
-                sandboxId,
-                runnerCommand,
-                SandboxRunningContext.ExistingLogin,
-                workingDirectory);
-
-            var completedTask = await Task.WhenAny(
-                executionTask,
-                Task.Delay(TimeSpan.FromSeconds(timeoutSeconds))).ConfigureAwait(false);
-
-            var timedOut = completedTask != executionTask;
-
-            int? exitCode = null;
-            string? executionError = null;
-
-            if (!timedOut)
-            {
-                var (code, error) = await executionTask.ConfigureAwait(false);
-                exitCode = code;
-                executionError = error;
-            }
-
-            var hostOutputPath = Path.Combine(hostJobDirectory, "output.txt");
-            var hostExitPath = Path.Combine(hostJobDirectory, "exit.txt");
-            var hostDonePath = Path.Combine(hostJobDirectory, "done.txt");
-
-            if (!timedOut)
-            {
-                await WaitForFileAsync(hostDonePath, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
-            }
-
-            var output = await ReadExistingFileAsync(hostOutputPath).ConfigureAwait(false);
-
-            if (File.Exists(hostExitPath))
-            {
-                var exitText = (await ReadExistingFileAsync(hostExitPath).ConfigureAwait(false)).Trim();
-                if (int.TryParse(exitText, out var parsedExitCode))
-                {
-                    exitCode = parsedExitCode;
-                }
-            }
-
-            var truncated = false;
-            if (output.Length > LabPolicy.MaxOutputBytes)
-            {
-                output = output[..LabPolicy.MaxOutputBytes];
-                truncated = true;
-            }
-
-            var duration = (DateTimeOffset.UtcNow - startedAt).TotalSeconds;
-
-            TryDeleteDirectory(hostJobDirectory);
-
+        if (!job.ExecutionTask.IsCompleted)
+        {
             return Serialize(new
             {
-                jobId,
-                output,
-                exitCode,
-                timedOut,
-                truncated,
-                durationSeconds = Math.Round(duration, 3),
-                error = executionError
+                job.JobId,
+                job.Command,
+                job.State,
+                job.StartedAt,
+                elapsedSeconds = (DateTimeOffset.UtcNow - job.StartedAt).TotalSeconds
             });
         }
-        catch (Exception ex)
-        {
-            return Error(jobId, ex.Message);
-        }
+
+        var result = await job.ExecutionTask.ConfigureAwait(false);
+        return Serialize(result);
     }
 
-    private static async Task WaitForFileAsync(string path, TimeSpan timeout)
+    [McpServerTool]
+    [Description("Waits until a Sandbox command job completes or the timeout expires, then returns its result.")]
+    public async Task<string> WaitJob(
+        [Description("Job ID returned by run_command_async.")] string jobId,
+        [Description("Maximum time to wait in seconds, between 1 and 300.")] int timeoutSeconds = 120)
     {
-        var deadline = DateTimeOffset.UtcNow + timeout;
+        var job = JobManager.Get(jobId);
+        if (job is null)
+            return Error(jobId, "Job not found.");
 
-        while (!File.Exists(path) && DateTimeOffset.UtcNow < deadline)
+        if (timeoutSeconds < 1 || timeoutSeconds > 300)
+            return Error(jobId, "timeoutSeconds must be between 1 and 300.");
+
+        var completed = await Task.WhenAny(
+            job.ExecutionTask,
+            Task.Delay(TimeSpan.FromSeconds(timeoutSeconds))).ConfigureAwait(false);
+
+        if (completed != job.ExecutionTask)
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
+            return Serialize(new
+            {
+                job.JobId,
+                job.State,
+                timedOut = true,
+                elapsedSeconds = (DateTimeOffset.UtcNow - job.StartedAt).TotalSeconds
+            });
         }
+
+        var result = await job.ExecutionTask.ConfigureAwait(false);
+        return Serialize(result);
     }
 
-    private static async Task<string> ReadExistingFileAsync(string path)
+    [McpServerTool]
+    [Description("Requests cancellation of a running Sandbox command job.")]
+    public async Task<string> StopJob(
+        [Description("Job ID returned by run_command_async.")] string jobId)
     {
-        if (!File.Exists(path))
-            return string.Empty;
-
-        try
-        {
-            return await File.ReadAllTextAsync(path).ConfigureAwait(false);
-        }
-        catch (IOException)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
-            return File.Exists(path) ? await File.ReadAllTextAsync(path).ConfigureAwait(false) : string.Empty;
-        }
-    }
-
-    private static void TryDeleteDirectory(string path)
-    {
-        try
-        {
-            if (Directory.Exists(path))
-                Directory.Delete(path, true);
-        }
-        catch (IOException)
-        {
-            // The Sandbox may still hold the mapped folder open. Temporary job folders
-            // under %TEMP% can be cleaned later without affecting Sandbox operation.
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
+        var cancelled = JobManager.TryCancel(jobId);
+        return cancelled
+            ? $"Cancellation requested for job {jobId}."
+            : $"Job {jobId} was not found.";
     }
 
     private static string Serialize<T>(T value)
     {
-        return System.Text.Json.JsonSerializer.Serialize(
-            value,
-            new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
+        return JsonSerializer.Serialize(value, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
     }
 
     private static string Error(string jobId, string message)
@@ -230,11 +125,7 @@ public sealed class SandboxExecutionTools
         return Serialize(new
         {
             jobId,
-            output = string.Empty,
-            exitCode = (int?)null,
-            timedOut = false,
-            truncated = false,
-            durationSeconds = 0.0,
+            state = "error",
             error = message
         });
     }
