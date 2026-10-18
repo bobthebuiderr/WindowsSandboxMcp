@@ -18,7 +18,8 @@ public sealed class SandboxGuiTools
                 ConvertTo-Json -Depth 3
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -53,7 +54,8 @@ public sealed class SandboxGuiTools
             exit 1
             """;
 
-        return await GuestRunner.RunAsync(script, timeoutSeconds + 10, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, timeoutSeconds + 10, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -72,7 +74,8 @@ public sealed class SandboxGuiTools
             Write-Output 'Keys sent.'
             """;
 
-        return await GuestRunner.RunAsync(script, 30, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 30, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -91,7 +94,8 @@ public sealed class SandboxGuiTools
             Write-Output 'Text sent.'
             """;
 
-        return await GuestRunner.RunAsync(script, 30, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 30, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -116,6 +120,7 @@ public sealed class SandboxGuiTools
                 ConvertTo-Json -Depth 3
             """;
 
-        return await GuestRunner.RunAsync(script, 30, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 30, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 }

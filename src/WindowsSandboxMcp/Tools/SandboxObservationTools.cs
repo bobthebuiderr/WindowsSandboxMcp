@@ -29,7 +29,8 @@ public sealed class SandboxObservationTools
                 ConvertTo-Json -Depth 3
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -52,7 +53,8 @@ public sealed class SandboxObservationTools
                 ConvertTo-Json -Depth 3
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -75,7 +77,8 @@ public sealed class SandboxObservationTools
                 ConvertTo-Json -Depth 3
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -92,7 +95,8 @@ public sealed class SandboxObservationTools
                 ConvertTo-Json -Depth 3
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -112,7 +116,8 @@ public sealed class SandboxObservationTools
                 ConvertTo-Json -Depth 3
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -131,7 +136,8 @@ public sealed class SandboxObservationTools
             } | ConvertTo-Json -Depth 3
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]

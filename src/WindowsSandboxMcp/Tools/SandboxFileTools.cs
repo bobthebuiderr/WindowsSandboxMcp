@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using ModelContextProtocol.Server;
 using WindowsSandboxMcp.Internal;
@@ -39,7 +40,8 @@ public sealed class SandboxFileTools
             Write-Output "Wrote $((Get-Item -LiteralPath $path).Length) bytes to $path"
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -73,7 +75,8 @@ public sealed class SandboxFileTools
             }
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -100,7 +103,8 @@ public sealed class SandboxFileTools
                 ConvertTo-Json -Depth 3
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -146,7 +150,7 @@ public sealed class SandboxFileTools
             }, new JsonSerializerOptions { WriteIndented = true });
         }
 
-        return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+        return GuestRunner.Serialize(result);
     }
 
     [McpServerTool]
@@ -156,7 +160,7 @@ public sealed class SandboxFileTools
         [Description("Optional host file name. Defaults to the guest file name.")] string? hostFileName = null)
     {
         var guestFilePath = GuestPath.ValidateWorkspaceFile(guestPath);
-        var safeFileName = Path.GetFileName(hostFilePath);
+        var safeFileName = Path.GetFileName(guestFilePath);
 
         if (string.IsNullOrWhiteSpace(hostFileName))
             hostFileName = safeFileName;
@@ -174,7 +178,7 @@ public sealed class SandboxFileTools
         var result = await GuestRunner.RunAsync(script, 120, null).ConfigureAwait(false);
 
         if (result.ExitCode != 0)
-            return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+            return GuestRunner.Serialize(result);
 
         var hostPath = Path.Combine(LabPolicy.HostResultsRoot, hostFileName);
 
@@ -211,6 +215,7 @@ public sealed class SandboxFileTools
             Write-Output "Deleted $path"
             """;
 
-        return await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        var result = await GuestRunner.RunAsync(script, 60, null).ConfigureAwait(false);
+        return GuestRunner.Serialize(result);
     }
 }

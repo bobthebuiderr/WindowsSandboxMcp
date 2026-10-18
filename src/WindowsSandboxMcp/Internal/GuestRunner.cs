@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using WindowsSandboxMcp.Models;
 using WindowsSandboxMcp.Security;
 
@@ -203,18 +204,12 @@ internal static class GuestRunner
         }
     }
 
-    public static async Task<(CommandExecutionResult Result, string? HostArtifactPath)> RunWithArtifactAsync(
-        string command,
-        string artifactFileName,
-        int timeoutSeconds,
-        string? workingDirectory,
-        CancellationToken cancellationToken = default)
+    public static string Serialize(CommandExecutionResult result)
     {
-        var jobId = Guid.NewGuid().ToString("N");
-        var result = await RunAsync(command, timeoutSeconds, workingDirectory, jobId, cancellationToken).ConfigureAwait(false);
-        var hostArtifactPath = Path.Combine(LabPolicy.HostJobsRoot, jobId, artifactFileName);
-
-        return (result, File.Exists(hostArtifactPath) ? hostArtifactPath : null);
+        return JsonSerializer.Serialize(result, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
     }
 
     private static CommandExecutionResult Failure(string jobId, DateTimeOffset startedAt, string error)
