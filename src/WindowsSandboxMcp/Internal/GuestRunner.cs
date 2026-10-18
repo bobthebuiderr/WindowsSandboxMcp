@@ -37,9 +37,7 @@ internal static class GuestRunner
             return Failure(jobId, startedAt, "No running Sandbox found. Start a Sandbox first.");
 
         var hostJobDirectory = Path.Combine(
-            Path.GetTempPath(),
-            "WindowsSandboxMcp",
-            "runs",
+            LabPolicy.HostJobsRoot,
             jobId);
 
         var guestJobDirectory = $"{GuestJobRoot}\\{jobId}";
@@ -233,9 +231,7 @@ internal static class GuestRunner
         var result = await RunAsync(command, timeoutSeconds, workingDirectory, jobId, cancellationToken).ConfigureAwait(false);
 
         var hostArtifactPath = Path.Combine(
-            Path.GetTempPath(),
-            "WindowsSandboxMcp",
-            "runs",
+            LabPolicy.HostJobsRoot,
             jobId,
             artifactFileName);
 
